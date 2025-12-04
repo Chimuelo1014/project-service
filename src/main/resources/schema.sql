@@ -11,7 +11,7 @@ DROP TABLE IF EXISTS tenant_limits_cache CASCADE;
 -- ===================================
 -- PROJECTS TABLE
 -- ===================================
-CREATE TABLE projects (
+CREATE TABLE IF NOT EXISTS projects (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL,
     name VARCHAR(255) NOT NULL,
@@ -29,7 +29,7 @@ CREATE TABLE projects (
 -- ===================================
 -- DOMAINS TABLE
 -- ===================================
-CREATE TABLE domains (
+CREATE TABLE IF NOT EXISTS domains (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     project_id UUID NOT NULL,
     domain_url VARCHAR(255) NOT NULL UNIQUE,
@@ -47,7 +47,7 @@ CREATE TABLE domains (
 -- ===================================
 -- REPOSITORIES TABLE
 -- ===================================
-CREATE TABLE repositories (
+CREATE TABLE IF NOT EXISTS repositories (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     project_id UUID NOT NULL,
     repo_url VARCHAR(500) NOT NULL UNIQUE,
@@ -64,7 +64,7 @@ CREATE TABLE repositories (
 -- ===================================
 -- TENANT LIMITS CACHE TABLE
 -- ===================================
-CREATE TABLE tenant_limits_cache (
+CREATE TABLE IF NOT EXISTS tenant_limits_cache (
     tenant_id UUID PRIMARY KEY,
     max_projects INT NOT NULL,
     max_domains INT NOT NULL,
@@ -77,24 +77,29 @@ CREATE TABLE tenant_limits_cache (
 -- ===================================
 
 -- Projects indexes
-CREATE INDEX idx_projects_tenant_id ON projects(tenant_id);
-CREATE INDEX idx_projects_owner_id ON projects(owner_id);
-CREATE INDEX idx_projects_status ON projects(status);
+CREATE INDEX IF NOT EXISTS idx_projects_tenant_id ON projects(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_projects_owner_id ON projects(owner_id);
+CREATE INDEX IF NOT EXISTS idx_projects_status ON projects(status);
 
 -- Domains indexes
-CREATE INDEX idx_domains_project_id ON domains(project_id);
-CREATE INDEX idx_domains_status ON domains(verification_status);
-CREATE INDEX idx_domains_url ON domains(domain_url);
+CREATE INDEX IF NOT EXISTS idx_domains_project_id ON domains(project_id);
+CREATE INDEX IF NOT EXISTS idx_domains_status ON domains(verification_status);
+CREATE INDEX IF NOT EXISTS idx_domains_url ON domains(domain_url);
 
 -- Repositories indexes
-CREATE INDEX idx_repositories_project_id ON repositories(project_id);
-CREATE INDEX idx_repositories_type ON repositories(repo_type);
+CREATE INDEX IF NOT EXISTS idx_repositories_project_id ON repositories(project_id);
+CREATE INDEX IF NOT EXISTS idx_repositories_type ON repositories(repo_type);
 
 -- ===================================
--- FUNCTIONS
+-- FUNCTIONS & TRIGGERS
 -- ===================================
 
--- Update updated_at timestamp
+-- Drop existing function and trigger if they exist
+DROP TRIGGER IF EXISTS update_projects_updated_at ON projects;
+DROP TRIGGER IF EXISTS update_tenant_limits_cache_updated_at ON tenant_limits_cache;
+DROP FUNCTION IF EXISTS update_updated_at_column();
+
+-- Create function to update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -104,9 +109,22 @@ END;
 $$ language 'plpgsql';
 
 -- Trigger for projects table
-CREATE TRIGGER update_projects_updated_at BEFORE UPDATE ON projects
-FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER update_projects_updated_at 
+BEFORE UPDATE ON projects
+FOR EACH ROW 
+EXECUTE FUNCTION update_updated_at_column();
 
 -- Trigger for tenant_limits_cache table
-CREATE TRIGGER update_tenant_limits_cache_updated_at BEFORE UPDATE ON tenant_limits_cache
-FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER update_tenant_limits_cache_updated_at 
+BEFORE UPDATE ON tenant_limits_cache
+FOR EACH ROW 
+EXECUTE FUNCTION update_updated_at_column();
+
+-- ===================================
+-- SAMPLE DATA (opcional para testing)
+-- ===================================
+
+-- Uncomment para insertar datos de prueba
+-- INSERT INTO tenant_limits_cache (tenant_id, max_projects, max_domains, max_repos) 
+-- VALUES ('00000000-0000-0000-0000-000000000001', 5, 10, 5)
+-- ON CONFLICT (tenant_id) DO NOTHING;

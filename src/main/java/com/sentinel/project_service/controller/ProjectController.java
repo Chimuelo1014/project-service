@@ -119,6 +119,20 @@ public class ProjectController {
     }
 
     /**
+     * Eliminar dominio
+     * DELETE /api/projects/{projectId}/domains/{domainId}
+     */
+    @DeleteMapping("/{projectId}/domains/{domainId}")
+    public ResponseEntity<Void> deleteDomain(
+            @PathVariable UUID projectId,
+            @PathVariable UUID domainId
+    ) {
+        log.info("Deleting domain {} from project: {}", domainId, projectId);
+        domainService.deleteDomain(domainId);
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
      * Agregar repositorio a proyecto
      * POST /api/projects/{id}/repositories
      */
@@ -141,4 +155,18 @@ public class ProjectController {
         log.info("Fetching repositories for project: {}", id);
         return ResponseEntity.ok(repositoryService.getRepositoriesByProject(id));
     }
-}_service
+
+    /**
+     * Eliminar repositorio
+     * DELETE /api/projects/{projectId}/repositories/{repositoryId}
+     */
+    @DeleteMapping("/{projectId}/repositories/{repositoryId}")
+    public ResponseEntity<Void> deleteRepository(
+            @PathVariable UUID projectId,
+            @PathVariable UUID repositoryId
+    ) {
+        log.info("Deleting repository {} from project: {}", repositoryId, projectId);
+        repositoryService.deleteRepository(repositoryId);
+        return ResponseEntity.noContent().build();
+    }
+}
