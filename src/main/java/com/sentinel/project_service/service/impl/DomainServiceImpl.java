@@ -1,7 +1,5 @@
 package com.sentinel.project_service.service.impl;
 
-package com.sentinel.project.service.impl;
-
 import com.sentinel.project_service.dto.request.AddDomainRequest;
 import com.sentinel.project_service.dto.response.DomainDTO;
 import com.sentinel.project_service.entity.DomainEntity;

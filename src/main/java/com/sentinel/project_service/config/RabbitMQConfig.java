@@ -29,8 +29,13 @@ public class RabbitMQConfig {
         return new TopicExchange("tenant-exchange", true, false);
     }
 
+    @Bean
+    public TopicExchange domainExchange() {
+        return new TopicExchange("domain-exchange", true, false);
+    }
+
     // ========================================
-    // QUEUES
+    // QUEUES (Para publicar eventos)
     // ========================================
     
     @Bean
@@ -61,11 +66,23 @@ public class RabbitMQConfig {
                 .build();
     }
 
+    // ========================================
+    // QUEUES (Para consumir eventos)
+    // ========================================
+    
     // Queue para consumir tenant.plan.upgraded
     @Bean
     public Queue tenantUpgradedQueue() {
         return QueueBuilder
                 .durable("project.tenant.upgraded.queue")
+                .build();
+    }
+
+    // Queue para consumir domain.verified (desde C#)
+    @Bean
+    public Queue domainVerifiedQueue() {
+        return QueueBuilder
+                .durable("project.domain.verified.queue")
                 .build();
     }
 
@@ -111,6 +128,14 @@ public class RabbitMQConfig {
                 .bind(tenantUpgradedQueue())
                 .to(tenantExchange())
                 .with("tenant.plan.upgraded");
+    }
+
+    @Bean
+    public Binding domainVerifiedBinding() {
+        return BindingBuilder
+                .bind(domainVerifiedQueue())
+                .to(domainExchange())
+                .with("domain.verified");
     }
 
     // ========================================
