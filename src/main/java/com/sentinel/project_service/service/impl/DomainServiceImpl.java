@@ -35,47 +35,52 @@ public class DomainServiceImpl implements DomainService {
     @Override
     @Transactional
     public DomainDTO addDomain(UUID projectId, AddDomainRequest request) {
-        log.info("Adding domain to project: {}", projectId);
+        log.info("Adding domain '{}' to project: {}", request.getDomainUrl(), projectId);
 
-        // Validar proyecto existe
+        // 1. Validar proyecto existe
         ProjectEntity project = projectRepository.findById(projectId)
                 .orElseThrow(() -> new ProjectNotFoundException("Project not found"));
 
-        // Normalizar URL
+        // 2. Normalizar URL
         String normalizedUrl = normalizeDomainUrl(request.getDomainUrl());
 
-        // Validar duplicado
+        // 3. Validar duplicado GLOBAL (no solo por proyecto)
         if (domainRepository.existsByDomainUrl(normalizedUrl)) {
-            throw new DomainAlreadyExistsException("Domain already exists: " + normalizedUrl);
+            throw new DomainAlreadyExistsException(
+                "Domain already registered in the system: " + normalizedUrl
+            );
         }
 
-        // Validar límites
+        // 4. Validar límites del TENANT (no solo del proyecto)
         validateDomainLimit(project.getTenantId(), projectId);
 
-        // Generar token de verificación
-        String verificationToken = UUID.randomUUID().toString();
+        // 5. Generar token de verificación
+        String verificationToken = UUID.randomUUID().toString().replace("-", "");
 
-        // Crear dominio
+        // 6. Determinar método de verificación
+        VerificationMethod method = request.getVerificationMethod() != null 
+            ? request.getVerificationMethod() 
+            : VerificationMethod.DNS_TXT;
+
+        // 7. Crear dominio
         DomainEntity domain = DomainEntity.builder()
                 .projectId(projectId)
                 .domainUrl(normalizedUrl)
                 .verificationStatus(VerificationStatus.PENDING)
-                .verificationMethod(request.getVerificationMethod() != null 
-                    ? request.getVerificationMethod() 
-                    : VerificationMethod.DNS_TXT)
+                .verificationMethod(method)
                 .verificationToken(verificationToken)
                 .build();
 
         domainRepository.save(domain);
+        log.info("Domain created with ID: {}", domain.getId());
 
-        // Incrementar contador en proyecto
+        // 8. Incrementar contador en proyecto
         project.incrementDomains();
         projectRepository.save(project);
 
-        // Publicar evento para domain-verification-service (C#)
+        // 9. Publicar evento para domain-verification-service (C#)
         eventPublisher.publishDomainAdded(domain);
-
-        log.info("Domain added: {}", domain.getId());
+        log.info("Domain verification requested: {} via {}", domain.getId(), method);
 
         return mapToDTO(domain);
     }
@@ -92,16 +97,19 @@ public class DomainServiceImpl implements DomainService {
     @Override
     @Transactional
     public void deleteDomain(UUID domainId) {
+        log.info("Deleting domain: {}", domainId);
+        
         DomainEntity domain = domainRepository.findById(domainId)
                 .orElseThrow(() -> new DomainNotFoundException("Domain not found"));
 
-        // Decrementar contador
+        // Decrementar contador en proyecto
         ProjectEntity project = projectRepository.findById(domain.getProjectId())
                 .orElseThrow(() -> new ProjectNotFoundException("Project not found"));
 
         project.decrementDomains();
         projectRepository.save(project);
 
+        // Eliminar dominio
         domainRepository.delete(domain);
 
         log.info("Domain deleted: {}", domainId);
@@ -110,40 +118,70 @@ public class DomainServiceImpl implements DomainService {
     @Override
     @Transactional
     public void markDomainAsVerified(UUID domainId) {
+        log.info("Marking domain as verified: {}", domainId);
+        
         DomainEntity domain = domainRepository.findById(domainId)
                 .orElseThrow(() -> new DomainNotFoundException("Domain not found"));
 
         domain.markAsVerified();
         domainRepository.save(domain);
 
-        log.info("Domain verified: {}", domainId);
+        log.info("Domain verified: {} ({})", domainId, domain.getDomainUrl());
     }
 
-    // Helper methods
+    // ============================================
+    // HELPER METHODS
+    // ============================================
+
+    /**
+     * Valida límites del tenant (consultando cache local).
+     */
     private void validateDomainLimit(UUID tenantId, UUID projectId) {
+        // Contar dominios del PROYECTO (no del tenant completo)
         long currentCount = domainRepository.countByProjectId(projectId);
 
+        // Obtener límites del tenant desde cache
         TenantLimitsCacheEntity limits = limitsCache.findById(tenantId)
-                .orElseThrow(() -> new ServiceUnavailableException("Unable to validate limits"));
+                .orElseThrow(() -> new ServiceUnavailableException(
+                    "Unable to validate limits. Cache not available."
+                ));
 
         if (!limits.canAddDomain((int) currentCount)) {
             throw new LimitExceededException(
-                String.format("Domain limit reached (%d/%d)", currentCount, limits.getMaxDomains())
+                String.format("Domain limit reached (%d/%d). Upgrade your plan.", 
+                    currentCount, limits.getMaxDomains())
             );
         }
+
+        log.debug("Domain limit OK: {}/{} for tenant {}", 
+            currentCount, limits.getMaxDomains(), tenantId);
     }
 
+    /**
+     * Normaliza URL del dominio:
+     * - Remueve protocolo (http/https)
+     * - Remueve www.
+     * - Remueve trailing slash
+     * - Convierte a lowercase
+     */
     private String normalizeDomainUrl(String url) {
+        String normalized = url.trim();
+        
         // Remover protocolo
-        String normalized = url.replaceAll("^https?://", "");
+        normalized = normalized.replaceAll("^https?://", "");
         
         // Remover www.
         normalized = normalized.replaceAll("^www\\.", "");
         
-        // Remover trailing slash
-        normalized = normalized.replaceAll("/$", "");
+        // Remover trailing slash y paths
+        normalized = normalized.replaceAll("/.*$", "");
         
-        return normalized.toLowerCase();
+        // Lowercase
+        normalized = normalized.toLowerCase();
+        
+        log.debug("Normalized URL: {} -> {}", url, normalized);
+        
+        return normalized;
     }
 
     private DomainDTO mapToDTO(DomainEntity entity) {

@@ -1,6 +1,7 @@
 package com.sentinel.project_service.service.impl;
 
 import com.sentinel.project_service.client.TenantServiceClient;
+import com.sentinel.project_service.client.dto.TenantDTO;
 import com.sentinel.project_service.dto.request.CreateProjectRequest;
 import com.sentinel.project_service.dto.response.ProjectDTO;
 import com.sentinel.project_service.entity.ProjectEntity;
@@ -33,12 +34,23 @@ public class ProjectServiceImpl implements ProjectService {
     @Override
     @Transactional
     public ProjectDTO createProject(CreateProjectRequest request, UUID tenantId, UUID userId) {
-        log.info("Creating project for tenant: {}", tenantId);
+        log.info("Creating project '{}' for tenant: {}", request.getName(), tenantId);
 
-        // Validar límites
-        validateProjectLimit(tenantId);
+        // 1. Validar límites ANTES de crear
+        long currentCount = projectRepository.countByTenantIdAndStatus(tenantId, ProjectStatus.ACTIVE);
+        TenantLimitsCacheEntity limits = getCachedLimits(tenantId);
 
-        // Crear proyecto
+        if (!limits.canCreateProject((int) currentCount)) {
+            log.warn("Project limit reached for tenant {}: {}/{}", 
+                tenantId, currentCount, limits.getMaxProjects());
+            
+            throw new LimitExceededException(
+                String.format("Project limit reached (%d/%d). Upgrade your plan.", 
+                    currentCount, limits.getMaxProjects())
+            );
+        }
+
+        // 2. Crear proyecto
         ProjectEntity project = ProjectEntity.builder()
                 .tenantId(tenantId)
                 .name(request.getName())
@@ -48,18 +60,19 @@ public class ProjectServiceImpl implements ProjectService {
                 .build();
 
         projectRepository.save(project);
+        log.info("Project created with ID: {}", project.getId());
 
-        // Incrementar contador en tenant-service
+        // 3. Incrementar contador en tenant-service (con manejo de errores)
         try {
             tenantClient.incrementResource(tenantId, "PROJECT");
+            log.debug("Project count incremented in tenant-service");
         } catch (Exception e) {
-            log.error("Failed to increment project count in tenant-service: {}", e.getMessage());
+            log.error("Failed to increment project count: {}", e.getMessage());
+            // No fallar la transacción - el cache local se sincronizará
         }
 
-        // Publicar evento
+        // 4. Publicar evento (para user-management asignar PROJECT_ADMIN)
         eventPublisher.publishProjectCreated(project);
-
-        log.info("Project created: {}", project.getId());
 
         return mapToDTO(project);
     }
@@ -85,6 +98,8 @@ public class ProjectServiceImpl implements ProjectService {
     @Override
     @Transactional
     public ProjectDTO updateProject(UUID projectId, CreateProjectRequest request, UUID userId) {
+        log.info("Updating project: {}", projectId);
+        
         ProjectEntity project = projectRepository.findById(projectId)
                 .orElseThrow(() -> new ProjectNotFoundException("Project not found: " + projectId));
 
@@ -97,7 +112,6 @@ public class ProjectServiceImpl implements ProjectService {
         project.setDescription(request.getDescription());
 
         projectRepository.save(project);
-
         log.info("Project updated: {}", projectId);
 
         return mapToDTO(project);
@@ -106,6 +120,8 @@ public class ProjectServiceImpl implements ProjectService {
     @Override
     @Transactional
     public void deleteProject(UUID projectId, UUID userId) {
+        log.info("Deleting project: {}", projectId);
+        
         ProjectEntity project = projectRepository.findById(projectId)
                 .orElseThrow(() -> new ProjectNotFoundException("Project not found: " + projectId));
 
@@ -121,11 +137,12 @@ public class ProjectServiceImpl implements ProjectService {
         // Decrementar contador en tenant-service
         try {
             tenantClient.decrementResource(project.getTenantId(), "PROJECT");
+            log.debug("Project count decremented in tenant-service");
         } catch (Exception e) {
             log.error("Failed to decrement project count: {}", e.getMessage());
         }
 
-        // Publicar evento
+        // Publicar evento (para scan-orchestrator cancelar scans activos)
         eventPublisher.publishProjectDeleted(projectId, project.getTenantId());
 
         log.info("Project deleted: {}", projectId);
@@ -151,38 +168,44 @@ public class ProjectServiceImpl implements ProjectService {
         projectRepository.save(project);
     }
 
-    // Validaciones
-    private void validateProjectLimit(UUID tenantId) {
-        long currentCount = projectRepository.countByTenantIdAndStatus(tenantId, ProjectStatus.ACTIVE);
+    // ============================================
+    // HELPER METHODS
+    // ============================================
 
-        // Buscar límites en cache
-        TenantLimitsCacheEntity limits = limitsCache.findById(tenantId)
+    /**
+     * Obtiene límites del cache local.
+     * Si no existe, consulta tenant-service y cachea.
+     */
+    private TenantLimitsCacheEntity getCachedLimits(UUID tenantId) {
+        return limitsCache.findById(tenantId)
                 .orElseGet(() -> fetchAndCacheLimits(tenantId));
-
-        if (!limits.canCreateProject((int) currentCount)) {
-            throw new LimitExceededException(
-                String.format("Project limit reached (%d/%d). Upgrade your plan.", 
-                    currentCount, limits.getMaxProjects())
-            );
-        }
     }
 
+    /**
+     * Consulta tenant-service y guarda en cache local.
+     */
     private TenantLimitsCacheEntity fetchAndCacheLimits(UUID tenantId) {
+        log.info("Cache MISS - Fetching limits for tenant: {}", tenantId);
+        
         try {
-            var tenantDTO = tenantClient.getTenant(tenantId);
+            TenantDTO tenant = tenantClient.getTenant(tenantId);
             
             TenantLimitsCacheEntity cache = TenantLimitsCacheEntity.builder()
                     .tenantId(tenantId)
-                    .maxProjects(tenantDTO.getLimits().getMaxProjects())
-                    .maxDomains(tenantDTO.getLimits().getMaxDomains())
-                    .maxRepos(tenantDTO.getLimits().getMaxRepos())
+                    .maxProjects(tenant.getLimits().getMaxProjects())
+                    .maxDomains(tenant.getLimits().getMaxDomains())
+                    .maxRepos(tenant.getLimits().getMaxRepos())
                     .build();
 
             limitsCache.save(cache);
+            log.info("Cache STORED for tenant: {}", tenantId);
+            
             return cache;
         } catch (Exception e) {
             log.error("Failed to fetch tenant limits: {}", e.getMessage());
-            throw new ServiceUnavailableException("Unable to validate project limits");
+            throw new ServiceUnavailableException(
+                "Unable to validate project limits. Please try again."
+            );
         }
     }
 
