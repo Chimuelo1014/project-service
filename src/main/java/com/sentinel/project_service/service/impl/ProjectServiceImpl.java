@@ -1,6 +1,7 @@
 package com.sentinel.project_service.service.impl;
 
 import com.sentinel.project_service.client.TenantServiceClient;
+import com.sentinel.project_service.client.UserManagementServiceClient;
 import com.sentinel.project_service.client.dto.TenantDTO;
 import com.sentinel.project_service.dto.request.CreateProjectRequest;
 import com.sentinel.project_service.dto.response.ProjectDTO;
@@ -29,14 +30,19 @@ public class ProjectServiceImpl implements ProjectService {
     private final ProjectRepository projectRepository;
     private final TenantLimitsCacheRepository limitsCache;
     private final TenantServiceClient tenantClient;
+    private final UserManagementServiceClient userMgmtClient;
     private final ProjectEventPublisher eventPublisher;
 
     @Override
     @Transactional
     public ProjectDTO createProject(CreateProjectRequest request, UUID tenantId, UUID userId) {
-        log.info("Creating project '{}' for tenant: {}", request.getName(), tenantId);
+        log.info("Creating project '{}' for tenant: {} by user: {}", 
+            request.getName(), tenantId, userId);
 
-        // 1. Validar límites ANTES de crear
+        // 1. VALIDAR PERMISOS: Usuario debe ser miembro del tenant
+        validateUserTenantMembership(userId, tenantId);
+
+        // 2. Validar límites ANTES de crear
         long currentCount = projectRepository.countByTenantIdAndStatus(tenantId, ProjectStatus.ACTIVE);
         TenantLimitsCacheEntity limits = getCachedLimits(tenantId);
 
@@ -50,7 +56,7 @@ public class ProjectServiceImpl implements ProjectService {
             );
         }
 
-        // 2. Crear proyecto
+        // 3. Crear proyecto
         ProjectEntity project = ProjectEntity.builder()
                 .tenantId(tenantId)
                 .name(request.getName())
@@ -62,7 +68,7 @@ public class ProjectServiceImpl implements ProjectService {
         projectRepository.save(project);
         log.info("Project created with ID: {}", project.getId());
 
-        // 3. Incrementar contador en tenant-service (con manejo de errores)
+        // 4. Incrementar contador en tenant-service (con manejo de errores)
         try {
             tenantClient.incrementResource(tenantId, "PROJECT");
             log.debug("Project count incremented in tenant-service");
@@ -71,7 +77,7 @@ public class ProjectServiceImpl implements ProjectService {
             // No fallar la transacción - el cache local se sincronizará
         }
 
-        // 4. Publicar evento (para user-management asignar PROJECT_ADMIN)
+        // 5. Publicar evento (para user-management asignar PROJECT_ADMIN)
         eventPublisher.publishProjectCreated(project);
 
         return mapToDTO(project);
@@ -98,14 +104,14 @@ public class ProjectServiceImpl implements ProjectService {
     @Override
     @Transactional
     public ProjectDTO updateProject(UUID projectId, CreateProjectRequest request, UUID userId) {
-        log.info("Updating project: {}", projectId);
+        log.info("Updating project: {} by user: {}", projectId, userId);
         
         ProjectEntity project = projectRepository.findById(projectId)
                 .orElseThrow(() -> new ProjectNotFoundException("Project not found: " + projectId));
 
-        // Verificar ownership
+        // Verificar ownership O ser admin del tenant
         if (!project.getOwnerId().equals(userId)) {
-            throw new UnauthorizedException("You don't have permission to update this project");
+            validateUserIsAdmin(userId, project.getTenantId());
         }
 
         project.setName(request.getName());
@@ -120,14 +126,14 @@ public class ProjectServiceImpl implements ProjectService {
     @Override
     @Transactional
     public void deleteProject(UUID projectId, UUID userId) {
-        log.info("Deleting project: {}", projectId);
+        log.info("Deleting project: {} by user: {}", projectId, userId);
         
         ProjectEntity project = projectRepository.findById(projectId)
                 .orElseThrow(() -> new ProjectNotFoundException("Project not found: " + projectId));
 
-        // Verificar ownership
+        // Verificar ownership O ser admin del tenant
         if (!project.getOwnerId().equals(userId)) {
-            throw new UnauthorizedException("You don't have permission to delete this project");
+            validateUserIsAdmin(userId, project.getTenantId());
         }
 
         // Soft delete
@@ -166,6 +172,59 @@ public class ProjectServiceImpl implements ProjectService {
         
         project.incrementRepos();
         projectRepository.save(project);
+    }
+
+    // ============================================
+    // PERMISSION VALIDATION METHODS
+    // ============================================
+
+    /**
+     * Valida que el usuario sea miembro del tenant.
+     * Lanza UnauthorizedException si no lo es.
+     */
+    private void validateUserTenantMembership(UUID userId, UUID tenantId) {
+        try {
+            String role = userMgmtClient.getTenantRole(tenantId, userId);
+            
+            if (role == null) {
+                log.warn("User {} is not a member of tenant {}", userId, tenantId);
+                throw new UnauthorizedException(
+                    "You don't have access to this tenant"
+                );
+            }
+            
+            log.debug("User {} has role {} in tenant {}", userId, role, tenantId);
+        } catch (UnauthorizedException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("Failed to validate user membership: {}", e.getMessage());
+            throw new ServiceUnavailableException(
+                "Unable to validate permissions. Please try again."
+            );
+        }
+    }
+
+    /**
+     * Valida que el usuario sea TENANT_ADMIN.
+     */
+    private void validateUserIsAdmin(UUID userId, UUID tenantId) {
+        try {
+            String role = userMgmtClient.getTenantRole(tenantId, userId);
+            
+            if (!"TENANT_ADMIN".equals(role)) {
+                log.warn("User {} is not admin of tenant {}", userId, tenantId);
+                throw new UnauthorizedException(
+                    "Only tenant admins can perform this action"
+                );
+            }
+        } catch (UnauthorizedException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("Failed to validate admin role: {}", e.getMessage());
+            throw new ServiceUnavailableException(
+                "Unable to validate permissions. Please try again."
+            );
+        }
     }
 
     // ============================================
