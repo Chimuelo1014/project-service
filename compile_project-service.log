@@ -1,0 +1,18 @@
+﻿[INFO] Error stacktraces are turned on.
+[INFO] Scanning for projects...
+[INFO] 
+[INFO] --------------------< com.sentinel:project-service >--------------------
+[INFO] Building project-service 0.0.1-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- clean:3.4.0:clean (default-clean) @ project-service ---
+[INFO] Deleting C:\Users\USUARIO\Documents\RIWI\proyecto_ruta_avanzada\sentinel\project-root-java\project\project-service\target
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ project-service ---
+[INFO] Copying 1 resource from src\main\resources to target\classes
+[INFO] Copying 1 resource from src\main\resources to target\classes
+[INFO] 
+[INFO] --- compiler:3.13.0:compile (default-compile) @ project-service ---
+[INFO] Recompiling the module because of changed source code.
+[INFO] Compiling 47 source files with javac [debug parameters release 21] to target\classes

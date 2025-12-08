@@ -34,6 +34,11 @@ public class RabbitMQConfig {
         return new TopicExchange("domain-exchange", true, false);
     }
 
+    @Bean
+    public TopicExchange billingExchange() {
+        return new TopicExchange("billing-exchange", true, false);
+    }
+
     // ========================================
     // QUEUES (Para publicar eventos)
     // ========================================
@@ -83,6 +88,14 @@ public class RabbitMQConfig {
     public Queue domainVerifiedQueue() {
         return QueueBuilder
                 .durable("project.domain.verified.queue")
+                .build();
+    }
+
+    // Queue para consumir billing.payment_succeeded
+    @Bean
+    public Queue projectBillingPaymentQueue() {
+        return QueueBuilder
+                .durable("project-billing-payment-queue")
                 .build();
     }
 
@@ -136,6 +149,14 @@ public class RabbitMQConfig {
                 .bind(domainVerifiedQueue())
                 .to(domainExchange())
                 .with("domain.verified");
+    }
+
+    @Bean
+    public Binding projectBillingPaymentBinding() {
+        return BindingBuilder
+                .bind(projectBillingPaymentQueue())
+                .to(billingExchange())
+                .with("billing.payment_succeeded");
     }
 
     // ========================================

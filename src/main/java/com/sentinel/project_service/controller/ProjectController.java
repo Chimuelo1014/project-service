@@ -30,141 +30,144 @@ public class ProjectController {
     private final RepositoryService repositoryService;
 
     /**
-     * Crear proyecto
+     * Create project
      * POST /api/projects
      */
     @PostMapping
+    @org.springframework.security.access.prepost.PreAuthorize("hasAuthority('ROLE_AUTHENTICATED_USER')")
     public ResponseEntity<ProjectDTO> createProject(
             @Valid @RequestBody CreateProjectRequest request,
             @RequestHeader("X-Tenant-Id") UUID tenantId,
-            @RequestHeader("X-User-Id") UUID userId
-    ) {
+            @RequestHeader("X-User-Id") UUID userId) {
         log.info("Creating project for tenant: {}", tenantId);
         ProjectDTO project = projectService.createProject(request, tenantId, userId);
         return ResponseEntity.status(HttpStatus.CREATED).body(project);
     }
 
     /**
-     * Obtener proyectos por tenant
+     * Get projects by tenant
      * GET /api/projects?tenantId={id}
      */
     @GetMapping
+    @org.springframework.security.access.prepost.PreAuthorize("hasAuthority('ROLE_AUTHENTICATED_USER')")
     public ResponseEntity<List<ProjectDTO>> getProjects(
-            @RequestParam UUID tenantId
-    ) {
+            @RequestParam UUID tenantId) {
         log.info("Fetching projects for tenant: {}", tenantId);
         return ResponseEntity.ok(projectService.getProjectsByTenant(tenantId));
     }
 
     /**
-     * Obtener proyecto por ID
+     * Get project by ID
      * GET /api/projects/{id}
      */
     @GetMapping("/{id}")
+    @org.springframework.security.access.prepost.PreAuthorize("hasAuthority('ROLE_AUTHENTICATED_USER')")
     public ResponseEntity<ProjectDTO> getProject(@PathVariable UUID id) {
         log.info("Fetching project: {}", id);
         return ResponseEntity.ok(projectService.getProjectById(id));
     }
 
     /**
-     * Actualizar proyecto
+     * Update project
      * PUT /api/projects/{id}
      */
     @PutMapping("/{id}")
+    @org.springframework.security.access.prepost.PreAuthorize("hasAuthority('ROLE_AUTHENTICATED_USER')")
     public ResponseEntity<ProjectDTO> updateProject(
             @PathVariable UUID id,
             @Valid @RequestBody CreateProjectRequest request,
-            @RequestHeader("X-User-Id") UUID userId
-    ) {
+            @RequestHeader("X-User-Id") UUID userId) {
         log.info("Updating project: {}", id);
         return ResponseEntity.ok(projectService.updateProject(id, request, userId));
     }
 
     /**
-     * Eliminar proyecto
+     * Delete project
      * DELETE /api/projects/{id}
      */
     @DeleteMapping("/{id}")
+    @org.springframework.security.access.prepost.PreAuthorize("hasAuthority('ROLE_AUTHENTICATED_USER')")
     public ResponseEntity<Void> deleteProject(
             @PathVariable UUID id,
-            @RequestHeader("X-User-Id") UUID userId
-    ) {
+            @RequestHeader("X-User-Id") UUID userId) {
         log.info("Deleting project: {}", id);
         projectService.deleteProject(id, userId);
         return ResponseEntity.noContent().build();
     }
 
     /**
-     * Agregar dominio a proyecto
+     * Add domain to project
      * POST /api/projects/{id}/domains
      */
     @PostMapping("/{id}/domains")
+    @org.springframework.security.access.prepost.PreAuthorize("hasAuthority('ROLE_AUTHENTICATED_USER')")
     public ResponseEntity<DomainDTO> addDomain(
             @PathVariable UUID id,
-            @Valid @RequestBody AddDomainRequest request
-    ) {
+            @Valid @RequestBody AddDomainRequest request) {
         log.info("Adding domain to project: {}", id);
         DomainDTO domain = domainService.addDomain(id, request);
         return ResponseEntity.status(HttpStatus.CREATED).body(domain);
     }
 
     /**
-     * Obtener dominios de un proyecto
+     * Get domains of a project
      * GET /api/projects/{id}/domains
      */
     @GetMapping("/{id}/domains")
+    @org.springframework.security.access.prepost.PreAuthorize("hasAuthority('ROLE_AUTHENTICATED_USER')")
     public ResponseEntity<List<DomainDTO>> getDomains(@PathVariable UUID id) {
         log.info("Fetching domains for project: {}", id);
         return ResponseEntity.ok(domainService.getDomainsByProject(id));
     }
 
     /**
-     * Eliminar dominio
+     * Delete domain
      * DELETE /api/projects/{projectId}/domains/{domainId}
      */
     @DeleteMapping("/{projectId}/domains/{domainId}")
+    @org.springframework.security.access.prepost.PreAuthorize("hasAuthority('ROLE_AUTHENTICATED_USER')")
     public ResponseEntity<Void> deleteDomain(
             @PathVariable UUID projectId,
-            @PathVariable UUID domainId
-    ) {
+            @PathVariable UUID domainId) {
         log.info("Deleting domain {} from project: {}", domainId, projectId);
         domainService.deleteDomain(domainId);
         return ResponseEntity.noContent().build();
     }
 
     /**
-     * Agregar repositorio a proyecto
+     * Add repository to project
      * POST /api/projects/{id}/repositories
      */
     @PostMapping("/{id}/repositories")
+    @org.springframework.security.access.prepost.PreAuthorize("hasAuthority('ROLE_AUTHENTICATED_USER')")
     public ResponseEntity<RepositoryDTO> addRepository(
             @PathVariable UUID id,
-            @Valid @RequestBody AddRepositoryRequest request
-    ) {
+            @Valid @RequestBody AddRepositoryRequest request) {
         log.info("Adding repository to project: {}", id);
         RepositoryDTO repo = repositoryService.addRepository(id, request);
         return ResponseEntity.status(HttpStatus.CREATED).body(repo);
     }
 
     /**
-     * Obtener repositorios de un proyecto
+     * Get repositories of a project
      * GET /api/projects/{id}/repositories
      */
     @GetMapping("/{id}/repositories")
+    @org.springframework.security.access.prepost.PreAuthorize("hasAuthority('ROLE_AUTHENTICATED_USER')")
     public ResponseEntity<List<RepositoryDTO>> getRepositories(@PathVariable UUID id) {
         log.info("Fetching repositories for project: {}", id);
         return ResponseEntity.ok(repositoryService.getRepositoriesByProject(id));
     }
 
     /**
-     * Eliminar repositorio
+     * Delete repository
      * DELETE /api/projects/{projectId}/repositories/{repositoryId}
      */
     @DeleteMapping("/{projectId}/repositories/{repositoryId}")
+    @org.springframework.security.access.prepost.PreAuthorize("hasAuthority('ROLE_AUTHENTICATED_USER')")
     public ResponseEntity<Void> deleteRepository(
             @PathVariable UUID projectId,
-            @PathVariable UUID repositoryId
-    ) {
+            @PathVariable UUID repositoryId) {
         log.info("Deleting repository {} from project: {}", repositoryId, projectId);
         repositoryService.deleteRepository(repositoryId);
         return ResponseEntity.noContent().build();
